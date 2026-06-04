@@ -21,23 +21,41 @@ export async function pdfBufferToTextItems(
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   // Fix: pdfjs v5 on Node.js auto-sets #isWorkerDisabled=true but defaults
-  // workerSrc to the RELATIVE path "./pdf.worker.mjs". In the Next.js prod
-  // build the relative path resolves to a non-existent chunked path
+  // workerSrc to the RELATIVE path "./pdf.worker.mjs". In a Next.js prod build
+  // that relative path resolves to a non-existent chunked path
   // (/app/.next/server/chunks/pdf.worker.mjs) → "Setting up fake worker
-  // failed: Cannot find module". Setting workerSrc to the absolute resolved
+  // failed: Cannot find module". Setting workerSrc to an absolute resolved
   // path of the real worker (in node_modules) before getDocument() forces
-  // _setupFakeWorkerGlobal to import the correct file.
+  // _setupFakeWorkerGlobal to import the correct file instead.
   //
-  // serverExternalPackages:["pdfjs-dist"] in next.config.ts keeps pdfjs out
-  // of webpack chunks so require.resolve() below finds it in node_modules.
-  // createRequire(__filename) gives us a resolver rooted at this compiled
-  // dist file, which node hoists through the package tree to find pdfjs-dist.
-  // INFERENCE: file:// prefix required because pdfjs uses dynamic import()
-  // internally (ESM-style), and bare absolute paths are not valid import
-  // specifiers on some Node.js versions — a file:// URL is always safe.
-  const _require = createRequire(__filename);
-  const workerPath = _require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
+  // Resolve strategy (try in order, take first hit):
+  // 1. createRequire(__filename) — works when __filename is the real on-disk
+  //    path of this compiled dist file (the normal case: node_modules/…/dist/).
+  // 2. createRequire(process.cwd()) — fallback for bundled runtimes where
+  //    __filename is a virtual path; process.cwd() is typically the app root
+  //    which contains node_modules/pdfjs-dist.
+  // Either way, pdfjs-dist must exist in node_modules at deploy time (it is
+  // declared as a dependency, so Railway/Nixpacks keeps it).
+  //
+  // INFERENCE: file:// prefix is required because pdfjs uses dynamic import()
+  // internally; bare absolute paths are not valid import specifiers on all
+  // Node.js versions, but a file:// URL is always safe.
+  let workerPath: string | null = null;
+  for (const anchor of [__filename, process.cwd()]) {
+    try {
+      const _require = createRequire(anchor);
+      workerPath = _require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+      break;
+    } catch {
+      // try next anchor
+    }
+  }
+  if (workerPath) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
+  }
+  // If neither anchor resolved (should not happen in Railway deployment), pdfjs
+  // falls through to its default "./pdf.worker.mjs" which may fail — let it
+  // throw so the error surfaces rather than silently returning 0 items.
 
   const uint8 = new Uint8Array(
     buffer.buffer,
