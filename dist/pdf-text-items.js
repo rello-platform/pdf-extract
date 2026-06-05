@@ -88,7 +88,17 @@ async function pdfBufferToTextItems(buffer) {
     // If neither anchor resolved (should not happen in Railway deployment), pdfjs
     // falls through to its default "./pdf.worker.mjs" which may fail — let it
     // throw so the error surfaces rather than silently returning 0 items.
-    const uint8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    // GRID-COLUMN-SEGMENTATION-260605 fix: pdfjs v5 transfers (detaches) the
+    // underlying ArrayBuffer when `data:` is passed as a shared Uint8Array.
+    // Any subsequent Node.js or R2 operation on the same `buffer` then throws
+    // "Cannot perform Construct on a detached ArrayBuffer" — date extraction
+    // and R2 upload both failed in prod for this reason.
+    //
+    // Fix: copy the bytes into a fresh standalone ArrayBuffer that pdfjs may
+    // detach without affecting the caller's original buffer.  The copy is ~0
+    // overhead vs the multi-page text parse that follows.
+    const freshCopy = Buffer.from(buffer);
+    const uint8 = new Uint8Array(freshCopy.buffer, freshCopy.byteOffset, freshCopy.byteLength);
     const loadingTask = pdfjsLib.getDocument({
         data: uint8,
         useSystemFonts: false,
