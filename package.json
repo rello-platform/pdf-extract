@@ -1,6 +1,6 @@
 {
   "name": "@rello-platform/pdf-extract",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Deterministic PDF coordinate primitives for the Rello platform — promoted from PathfinderPro's grid-extract so PFP (rate sheets) and Rello (Closing Disclosure reconciliation, Wave Milo-CD Phase 1) consume one bulletproof core. Pure geometry; NO model calls; NO Anthropic key holder (Kelly lock 2026-05-21: Anthropic keys live only in Milo Engine).",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
